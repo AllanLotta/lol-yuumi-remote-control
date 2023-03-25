@@ -4,9 +4,11 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
-# Set the resolution of the League of Legends game on Windows PC
-game_resolution = (1920, 1080)
+# Set the resolutions of the League of Legends on the Yuumi PC and the main PC
+game_resolution = (3840, 2160)
+main_pc_resolution = (5120, 2880)
 
+# Endpoint for handling spell key presses
 @app.route('/spell', methods=['POST'])
 def handle_spell():
     global game_resolution
@@ -32,18 +34,18 @@ def handle_spell():
 
     return {'success': True}
 
-
+# Endpoint for handling mouse clicks
 @app.route('/click', methods=['POST'])
 def handle_click():
-    global game_resolution
+    global game_resolution, main_pc_resolution
 
     # Get the mouse coordinates from the request
     mouse_x = request.json['mouse_x']
     mouse_y = request.json['mouse_y']
 
-    # Convert the mouse coordinates from Mac screen resolution to Windows game resolution
-    game_x = int((mouse_x / 1440) * game_resolution[0])
-    game_y = int((mouse_y / 900) * game_resolution[1])
+    # Convert the mouse coordinates from main PC screen resolution to League of Legends game resolution
+    game_x = int((mouse_x / main_pc_resolution[0]) * game_resolution[0])
+    game_y = int((mouse_y / main_pc_resolution[1]) * game_resolution[1])
 
     # Move the mouse to the specified position and click
     pyautogui.moveTo(game_x, game_y)
@@ -51,6 +53,11 @@ def handle_click():
 
     return {'success': True}
 
+# Endpoint for checking server connection
+@app.route('/connect', methods=['GET'])
+def handle_connect():
+    return {'success': True}
 
+# Start the server connection
 if __name__ == '__main__':
-    app.run(port=8000)
+    app.run(host='192.168.0.4', port=8000, threaded=True)

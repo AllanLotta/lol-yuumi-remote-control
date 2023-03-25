@@ -1,80 +1,122 @@
+import sys
 import requests
-import keyboard
-import pyautogui
+import httpx  # Import the httpx library
+import asyncio
+import threading
+from pynput import mouse, keyboard
+import time
+
+running = True
 
 # IP address of the Yuumi PC running the Flask server
-yuumi_pc_ip = '192.168.1.100'
+yuumi_pc_ip = '192.168.0.4'
 
 # Port number the Flask server is running on
 server_port = '8000'
 
-# URL for the spell action endpoint
-spell_url = f'http://{yuumi_pc_ip}:{server_port}/spell'
-
 # URL for the click action endpoint
 click_url = f'http://{yuumi_pc_ip}:{server_port}/click'
 
-# Define the hotkeys
-ALT_KEY = 'alt'
-Q_KEY = 'q'
-W_KEY = 'w'
-E_KEY = 'e'
-R_KEY = 'r'
-D_KEY = 'd'
-F_KEY = 'f'
+# URL for the spell action endpoint
+spell_url = f'http://{yuumi_pc_ip}:{server_port}/spell'
 
-# Define the spells corresponding to the hotkeys
-SPELLS = {
-    Q_KEY: 'Q',
-    W_KEY: 'W',
-    E_KEY: 'E',
-    R_KEY: 'R',
-}
+# Define the hotkey
+ALT_KEY = keyboard.Key.alt_l
 
-# Function to send a spell action to the Yuumi PC
-def cast_spell(spell_key):
-    # Define the spell action as a JSON object
-    spell_data = {'action': spell_key}
+# Flag to indicate if the ALT key is currently pressed
+alt_pressed = False
 
-    # Send the spell action to the Flask server on the Yuumi PC
-    response = requests.post(spell_url, json=spell_data)
+# Configure delay between actions in seconds
+action_delay = 0.5
 
-    # Check if the request was successful
-    if response.status_code == 200:
-        print(f'Successfully cast {spell_key} spell')
-    else:
-        print('Failed to cast spell')
+# Store the time of the last action
+last_action_time = 0
 
-# Function to send a mouse click action to the Yuumi PC
-def move_yuumi(mouse_x, mouse_y):
-    # Define the mouse click action as a JSON object
-    click_data = {'mouse_x': mouse_x, 'mouse_y': mouse_y}
+# Connect to the Flask server on the Yuumi PC
+try:
+    print('Trying to connect...')
+    requests.get(f'http://{yuumi_pc_ip}:{server_port}')
+    print('Connected to Yuumi PC')
+except requests.exceptions.ConnectionError:
+    print('\033[91m' + 'Failed to connect to Yuumi PC. Please check the server IP and try running the script again.' + '\033[0m')
+    sys.exit()
 
-    # Send the mouse click action to the Flask server on the Yuumi PC
-    response = requests.post(click_url, json=click_data)
+def send_request(url, json_data):
+    try:
+        requests.post(url, json=json_data, timeout=5.0)
+    except requests.exceptions.Timeout:
+        print("Request timed out")
 
-    # Check if the request was successful
-    if response.status_code == 200:
-        print(f'Successfully moved Yuumi to ({mouse_x}, {mouse_y})')
-    else:
-        print('Failed to move Yuumi')
+def send_spell_action(spell):
+    global last_action_time, action_delay
 
-# Listen for the hotkey combination to be pressed
-while True:
-    if keyboard.is_pressed(ALT_KEY):
-        # Check if the hotkey combination is pressed
-        if all([keyboard.is_pressed(key) for key in [Q_KEY, W_KEY, E_KEY, R_KEY, D_KEY, F_KEY]]):
-            # Send the spell action corresponding to the first key in the combination
-            spell_key = SPELLS.get(Q_KEY)
-            if spell_key:
-                cast_spell(spell_key)
+    current_time = time.time()
+    if current_time - last_action_time >= action_delay:
+        spell_data = {'action': spell}
+        try:
+            requests.post(spell_url, json=spell_data, timeout=500)
+            last_action_time = current_time
+        except requests.exceptions.Timeout:
+            print('Request timed out')
 
-        # Get the current mouse position
-        mouse_pos = pyautogui.position()
+def on_key_press(key):
+    global running
 
-        # Send the mouse position to the Yuumi PC to move Yuumi
-        move_yuumi(mouse_pos[0], mouse_pos[1])
+    # Stop the script when CTRL + C is pressed
+    if key == keyboard.Key.ctrl and ctrl_pressed:
+        running = False
+        return False
 
-        # Wait for the ALT key to be released before continuing to listen
-        while keyboard.is_pressed(ALT_KEY):
-            pass
+    # Handle key presses for abilities and summoner spells
+    if alt_pressed and hasattr(key, 'char') and key.char in ['q', 'w', 'e', 'r', 'd', 'f']:
+        print(f'{key.char} key pressed')
+        # Define the spell action as a JSON object
+        spell_data = {'action': key.char}
+
+        # Send the spell action to the Flask server on the Yuumi PC
+        try:
+            requests.post(spell_url, json=spell_data, timeout=0.5)
+        except requests.exceptions.Timeout:
+            print('Request timed out')
+
+
+
+def on_hotkey_press(key):
+    global alt_pressed
+    if key == ALT_KEY:
+        alt_pressed = True
+        print('ALT key pressed')
+
+def on_hotkey_release(key):
+    global alt_pressed
+    if key == ALT_KEY:
+        alt_pressed = False
+        print('ALT key released')
+
+def on_click(x, y, button, pressed):
+    global last_action_time, action_delay, last_action
+
+    if alt_pressed and not pressed:
+        current_time = time.time()
+        if current_time - last_action_time >= action_delay:
+            print(f'{button.name} button clicked at ({x}, {y})')
+            click_data = {'mouse_x': x, 'mouse_y': y, 'button': button.name}
+            
+            # Create and start a new thread for sending the request
+            request_thread = threading.Thread(target=send_request, args=(click_url, click_data))
+            request_thread.start()
+
+            last_action_time = current_time
+            last_action = None
+
+mouse_listener = mouse.Listener(on_click=on_click, daemon=True)
+mouse_listener.start()
+
+hotkey_listener = keyboard.Listener(on_press=on_hotkey_press, on_release=on_hotkey_release, daemon=True)
+hotkey_listener.start()
+
+keyboard_listener = keyboard.Listener(on_press=on_key_press, daemon=True)
+keyboard_listener.start()
+
+while running:
+    time.sleep(1)
