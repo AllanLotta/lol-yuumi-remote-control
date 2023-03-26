@@ -1,5 +1,6 @@
 import keyboard
 import pyautogui
+import time
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -8,33 +9,24 @@ app = Flask(__name__)
 game_resolution = (3840, 2160)
 main_pc_resolution = (5120, 2880)
 
-# Endpoint for handling spell key presses
+# Duration for key presses
+key_press_duration = 0.15
+
 @app.route('/spell', methods=['POST'])
 def handle_spell():
-    global game_resolution
+    global key_press_duration
 
-    # Get the spell action from the request
     spell_action = request.json['action']
 
-    # Press the corresponding spell key on the keyboard
-    if spell_action == 'q':
-        keyboard.press('q')
-    elif spell_action == 'w':
-        keyboard.press('w')
-    elif spell_action == 'e':
-        keyboard.press('e')
-    elif spell_action == 'r':
-        keyboard.press('r')
-    elif spell_action == 'd':
-        keyboard.press('d')
-    elif spell_action == 'f':
-        keyboard.press('f')
+    if spell_action in ['q', 'w', 'e', 'r', 'd', 'f']:
+        keyboard.press(spell_action)
+        time.sleep(key_press_duration)
+        keyboard.release(spell_action)
     else:
         return {'error': 'Invalid spell action'}, 400
 
     return {'success': True}
 
-# Endpoint for handling mouse clicks
 @app.route('/click', methods=['POST'])
 def handle_click():
     global game_resolution, main_pc_resolution
@@ -42,6 +34,7 @@ def handle_click():
     # Get the mouse coordinates from the request
     mouse_x = request.json['mouse_x']
     mouse_y = request.json['mouse_y']
+    button = request.json['button']
 
     # Convert the mouse coordinates from main PC screen resolution to League of Legends game resolution
     game_x = int((mouse_x / main_pc_resolution[0]) * game_resolution[0])
@@ -49,15 +42,34 @@ def handle_click():
 
     # Move the mouse to the specified position and click
     pyautogui.moveTo(game_x, game_y)
-    pyautogui.click()
+    if button == 'left':
+        pyautogui.click()
+    elif button == 'right':
+        pyautogui.rightClick()
+    else:
+        return {'error': 'Invalid mouse button'}, 400
+    return {'success': True}
+
+@app.route('/level', methods=['POST'])
+def handle_level():
+    global key_press_duration
+
+    ability = request.json['ability']
+    print('Leveling up ability')
+    print(ability)
+    if ability in ['h', 'j', 'k', 'l']:
+        print(f'Leveling up {ability.upper()}')
+        keyboard.press(ability)
+        time.sleep(key_press_duration)
+        keyboard.release(ability)
+    else:
+        return {'error': 'Invalid ability'}, 400
 
     return {'success': True}
 
-# Endpoint for checking server connection
 @app.route('/connect', methods=['GET'])
 def handle_connect():
     return {'success': True}
 
-# Start the server connection
 if __name__ == '__main__':
     app.run(host='192.168.0.4', port=8000, threaded=True)
