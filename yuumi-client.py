@@ -3,16 +3,21 @@ import requests
 import threading
 from pynput import mouse, keyboard
 import time
+import configparser
 
 running = True
 
-yuumi_pc_ip = '192.168.0.4'
-server_port = '8000'
+# Load configuration
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+yuumi_pc_ip = config.get('General', 'yuumi_server_ip')
+server_port = config.get('General', 'yuumi_server_port')
 click_url = f'http://{yuumi_pc_ip}:{server_port}/click'
 spell_url = f'http://{yuumi_pc_ip}:{server_port}/spell'
 level_url = f'http://{yuumi_pc_ip}:{server_port}/level'
 
-ALT_KEY = keyboard.Key.alt_l
+ALT_KEY = keyboard.Key[config.get('Keys', 'yuumi_enable_controls_key')]
 alt_pressed = False
 
 action_delay = 0.5
@@ -33,23 +38,30 @@ def send_request(url, json_data):
         print("Request timed out")
 
 def on_key_press(key):
-    global running
+    global running, alt_pressed
 
     # Handle key presses for abilities and summoner spells
-    if alt_pressed and hasattr(key, 'char') and key.char in ['q', 'w', 'e', 'r', 'd', 'f', 'o', 'p', 'b', 'y']:
-        print(f'{key.char} key pressed')
-        # Define the spell action as a JSON object
-        spell_data = {'action': key.char}
-
-        # Send the spell action to the Flask server on the Yuumi PC
-        try:
-            requests.post(spell_url, json=spell_data, timeout=0.5)
-        except requests.exceptions.Timeout:
-            print('Request timed out')
-
-        return True  # Suppress the key event
-
-    return False
+    if alt_pressed and hasattr(key, 'char'):
+        key_config = {
+            config.get('Keys', 'spell_q'): 'q',
+            config.get('Keys', 'spell_w'): 'w',
+            config.get('Keys', 'spell_e'): 'e',
+            config.get('Keys', 'spell_r'): 'r',
+            config.get('Keys', 'spell_d'): 'd',
+            config.get('Keys', 'spell_f'): 'f',
+            config.get('Keys', 'open_shop'): 'p',
+            config.get('Keys', 'tab_info'): 'o',
+            config.get('Keys', 'go_to_base'): 'b',
+            config.get('Keys', 'level_up_q'): 'h',
+            config.get('Keys', 'level_up_w'): 'j',
+            config.get('Keys', 'level_up_e'): 'k',
+            config.get('Keys', 'level_up_r'): 'l'
+        }
+        action = key_config.get(key.char, None)
+        if action:
+            print(f'{key.char} key pressed')
+            spell_data = {'action': action}
+            send_request(spell_url, spell_data)
 
 def on_hotkey_press(key):
     global alt_pressed
@@ -85,7 +97,7 @@ mouse_listener.start()
 hotkey_listener = keyboard.Listener(on_press=on_hotkey_press, on_release=on_hotkey_release, daemon=True)
 hotkey_listener.start()
 
-keyboard_listener = keyboard.Listener(on_press=on_key_press, suppress=on_key_press, daemon=True)
+keyboard_listener = keyboard.Listener(on_press=on_key_press, daemon=True)
 keyboard_listener.start()
 
 while running:
